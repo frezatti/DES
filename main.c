@@ -13,6 +13,8 @@
 #include <unistd.h>
 
 static const char B64_TBL[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static const uint32_t B64_MASK_6 = 0x3F;
+static const uint32_t BYTE_MASK  = 0xFF;
 
 static int base64_encode(const uint8_t* in, size_t in_len, char** out, size_t* out_len)
 {
@@ -25,10 +27,10 @@ static int base64_encode(const uint8_t* in, size_t in_len, char** out, size_t* o
     size_t i = 0, j = 0;
     while (i + 3 <= in_len) {
         uint32_t v = ((uint32_t) in[i] << 16) | ((uint32_t) in[i + 1] << 8) | (uint32_t) in[i + 2];
-        buf[j++]   = B64_TBL[(v >> 18) & 0x3F];
-        buf[j++]   = B64_TBL[(v >> 12) & 0x3F];
-        buf[j++]   = B64_TBL[(v >> 6) & 0x3F];
-        buf[j++]   = B64_TBL[v & 0x3F];
+        buf[j++]   = B64_TBL[(v >> 18) & B64_MASK_6];
+        buf[j++]   = B64_TBL[(v >> 12) & B64_MASK_6];
+        buf[j++]   = B64_TBL[(v >> 6) & B64_MASK_6];
+        buf[j++]   = B64_TBL[v & B64_MASK_6];
         i += 3;
     }
     if (i < in_len) {
@@ -36,10 +38,10 @@ static int base64_encode(const uint8_t* in, size_t in_len, char** out, size_t* o
         int rem    = (int) (in_len - i);
         if (rem == 2)
             v |= (uint32_t) in[i + 1] << 8;
-        buf[j++] = B64_TBL[(v >> 18) & 0x3F];
-        buf[j++] = B64_TBL[(v >> 12) & 0x3F];
+        buf[j++] = B64_TBL[(v >> 18) & B64_MASK_6];
+        buf[j++] = B64_TBL[(v >> 12) & B64_MASK_6];
         if (rem == 2) {
-            buf[j++] = B64_TBL[(v >> 6) & 0x3F];
+            buf[j++] = B64_TBL[(v >> 6) & B64_MASK_6];
             buf[j++] = '=';
         } else {
             buf[j++] = '=';
@@ -94,22 +96,22 @@ static int base64_decode(const char* in, uint8_t** out, size_t* out_len)
                 pad = 1;
 
             uint32_t n = 0;
-            n |= (uint32_t) ((vals[0] < 0 ? 0 : vals[0]) & 0x3F) << 18;
-            n |= (uint32_t) ((vals[1] < 0 ? 0 : vals[1]) & 0x3F) << 12;
+            n |= (uint32_t) ((vals[0] < 0 ? 0 : vals[0]) & B64_MASK_6) << 18;
+            n |= (uint32_t) ((vals[1] < 0 ? 0 : vals[1]) & B64_MASK_6) << 12;
             if (vals[2] >= 0)
-                n |= (uint32_t) (vals[2] & 0x3F) << 6;
+                n |= (uint32_t) (vals[2] & B64_MASK_6) << 6;
             if (vals[3] >= 0)
-                n |= (uint32_t) (vals[3] & 0x3F);
+                n |= (uint32_t) (vals[3] & B64_MASK_6);
 
             if (pad == 2) {
-                buf[j++] = (uint8_t) ((n >> 16) & 0xFF);
+                buf[j++] = (uint8_t) ((n >> 16) & BYTE_MASK);
             } else if (pad == 1) {
-                buf[j++] = (uint8_t) ((n >> 16) & 0xFF);
-                buf[j++] = (uint8_t) ((n >> 8) & 0xFF);
+                buf[j++] = (uint8_t) ((n >> 16) & BYTE_MASK);
+                buf[j++] = (uint8_t) ((n >> 8) & BYTE_MASK);
             } else {
-                buf[j++] = (uint8_t) ((n >> 16) & 0xFF);
-                buf[j++] = (uint8_t) ((n >> 8) & 0xFF);
-                buf[j++] = (uint8_t) (n & 0xFF);
+                buf[j++] = (uint8_t) ((n >> 16) & BYTE_MASK);
+                buf[j++] = (uint8_t) ((n >> 8) & BYTE_MASK);
+                buf[j++] = (uint8_t) (n & BYTE_MASK);
             }
             vcount = 0;
         }
