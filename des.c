@@ -1,6 +1,9 @@
 #include "des.h"
 #include "des_tables.h"
+#include "des_bytes.h"
 #include <limits.h>
+#include <stdlib.h>
+#include <string.h>
 
 _Static_assert(sizeof(uint64_t) * 8 == 64, "Requires 64-bit uint64_t");
 
@@ -138,4 +141,70 @@ void des_key_schedule(uint64_t key64, uint64_t subkeys[16])
         uint64_t cd = ((uint64_t) C << 28) | (uint64_t) D; /* 56-bit */
         subkeys[i]  = des_permute56_to_48(cd, DES_PC2);    /* low 48 bits */
     }
+}
+
+int des_encrypt_buffer_zeropad(
+    const uint8_t* in, size_t in_len, const uint64_t subkeys[16], uint8_t** out, size_t* out_len)
+{
+    if (!out || !out_len)
+        return 1;
+    *out              = NULL;
+    *out_len          = 0;
+
+    size_t rem        = in_len % 8;
+    size_t padded_len = rem ? (in_len + (8 - rem)) : in_len;
+    if (padded_len == 0)
+        padded_len = 8; /* encrypt at least one 8-byte block */
+    uint8_t* buf = (uint8_t*) malloc(padded_len);
+    if (!buf)
+        return 2;
+    /* copy and zero-pad */
+    if (in_len)
+        memcpy(buf, in, in_len);
+    if (padded_len > in_len)
+        memset(buf + in_len, 0, padded_len - in_len);
+
+    /* encrypt in place into a new buffer (or reuse buf if you prefer).
+       We’ll produce a separate output buffer to keep in immutable. */
+    uint8_t* ct = (uint8_t*) malloc(padded_len);
+    if (!ct) {
+        free(buf);
+        return 3;
+    }
+
+    for (size_t i = 0; i < padded_len; i += 8) {
+        uint64_t block = load_be64(buf + i);
+        uint64_t enc   = des_encrypt_block(block, subkeys);
+        store_be64(enc, ct + i);
+    }
+
+    free(buf);
+    *out     = ct;
+    *out_len = padded_len;
+    return 0;
+}
+
+int des_decrypt_buffer_nopad(
+    const uint8_t* in, size_t in_len, const uint64_t subkeys[16], uint8_t** out, size_t* out_len)
+{
+    if (!out || !out_len)
+        return 1;
+    *out     = NULL;
+    *out_len = 0;
+    if (in_len == 0 || (in_len % 8) != 0)
+        return 2;
+
+    uint8_t* pt = (uint8_t*) malloc(in_len);
+    if (!pt)
+        return 3;
+
+    for (size_t i = 0; i < in_len; i += 8) {
+        uint64_t block = load_be64(in + i);
+        uint64_t dec   = des_decrypt_block(block, subkeys);
+        store_be64(dec, pt + i);
+    }
+
+    *out     = pt;
+    *out_len = in_len; /* caller decides how to interpret trailing zeros */
+    return 0;
 }
